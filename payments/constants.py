@@ -28,9 +28,6 @@ STRIPE_SUBSCRIPTION_ID_PREFIX: Final[str] = "sub_"
 STRIPE_INVOICE_ID_PREFIX: Final[str] = "in_"
 STRIPE_PAYMENT_INTENT_ID_PREFIX: Final[str] = "pi_"
 
-# Feature usage
-FEATURE_QUOTA_UNIT_DEFAULT: Final[str] = "units"
-
 # Entitlement error codes
 QUOTA_EXCEEDED_CODE: Final[str] = "quota_exceeded"
 NO_ACTIVE_SUBSCRIPTION_CODE: Final[str] = "no_active_subscription"

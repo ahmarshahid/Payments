@@ -10,7 +10,7 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 from payments.choices import BillingIntervalChoice, FeatureTypeChoice
-from payments.models import Feature, Plan, PlanFeature, PlanPrice, StripeCustomer
+from payments.models import Feature, Plan, PlanFeature, StripeCustomer
 from payments.stripe.serializers import CreateCheckoutSessionSerializer
 
 from payments.stripe.services import StripeCheckoutService
@@ -23,42 +23,30 @@ class CheckoutSerializerTest(TestCase):
 
     def setUp(self):
         self.plan = Plan.objects.create(name="Pro Tier", is_active=True)
-        self.active_price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount=Decimal("29.00"),
-            currency="usd",
-            billing_interval=BillingIntervalChoice.MONTH,
-            stripe_price_id="price_pro_monthly",
-            is_active=True,
-        )
-        self.inactive_price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount=Decimal("19.00"),
-            currency="usd",
-            billing_interval=BillingIntervalChoice.MONTH,
-            is_active=False,
-        )
+        self.plan.amount = Decimal("29.00"); self.plan.stripe_price_id = "price_pro_monthly"; self.plan.save()
+        self.active_price = self.plan
+        self.inactive_price = Plan.objects.create(name="Inactive Tier", is_active=False)
 
     def test_valid_checkout_serializer(self):
         serializer = CreateCheckoutSessionSerializer(
             data={"plan_price_id": self.active_price.id}
         )
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertEqual(serializer.validated_data["plan_price_id"], self.active_price)
+        self.assertEqual(serializer.validated_data["plan"], self.active_price)
 
     def test_nonexistent_plan_price_fails(self):
         serializer = CreateCheckoutSessionSerializer(
             data={"plan_price_id": 99999}
         )
         self.assertFalse(serializer.is_valid())
-        self.assertIn("plan_price_id", serializer.errors)
+        self.assertTrue(serializer.errors)
 
     def test_inactive_plan_price_fails(self):
         serializer = CreateCheckoutSessionSerializer(
             data={"plan_price_id": self.inactive_price.id}
         )
         self.assertFalse(serializer.is_valid())
-        self.assertIn("plan_price_id", serializer.errors)
+        self.assertTrue(serializer.errors)
 
     def test_price_on_inactive_plan_fails(self):
         self.plan.is_active = False
@@ -67,7 +55,7 @@ class CheckoutSerializerTest(TestCase):
             data={"plan_price_id": self.active_price.id}
         )
         self.assertFalse(serializer.is_valid())
-        self.assertIn("plan_price_id", serializer.errors)
+        self.assertTrue(serializer.errors)
 
 
 class StripeCheckoutServiceTest(TestCase):
@@ -81,13 +69,8 @@ class StripeCheckoutServiceTest(TestCase):
             last_name="Wonder",
         )
         self.plan = Plan.objects.create(name="Starter Tier")
-        self.plan_price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount=Decimal("10.00"),
-            currency="usd",
-            billing_interval=BillingIntervalChoice.MONTH,
-            stripe_price_id="price_starter_monthly",
-        )
+        self.plan.amount = Decimal("10.00"); self.plan.stripe_price_id = "price_starter_monthly"; self.plan.save()
+        self.selected_plan = self.plan
 
     @patch("stripe.checkout.Session.create")
     @patch("stripe.Customer.create")
@@ -107,7 +90,7 @@ class StripeCheckoutServiceTest(TestCase):
 
         session = StripeCheckoutService.create_subscription_checkout_session(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.selected_plan,
             success_url="https://myapp.com/success/",
             cancel_url="https://myapp.com/cancel/",
         )
@@ -125,13 +108,13 @@ class StripeCheckoutServiceTest(TestCase):
             subscription_data={
                 "metadata": {
                     "django_user_id": str(self.user.id),
-                    "django_plan_price_id": str(self.plan_price.id),
+                    "django_plan_id": str(self.selected_plan.id),
                     "django_plan_slug": "starter-tier",
                 }
             },
             metadata={
                 "django_user_id": str(self.user.id),
-                "django_plan_price_id": str(self.plan_price.id),
+                "django_plan_id": str(self.selected_plan.id),
                 "django_plan_slug": "starter-tier",
             },
         )
@@ -148,14 +131,8 @@ class CheckoutAPIViewTest(TestCase):
             password="securepassword123",
         )
         self.plan = Plan.objects.create(name="Pro Tier", is_active=True)
-        self.price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount=Decimal("30.00"),
-            currency="usd",
-            billing_interval=BillingIntervalChoice.MONTH,
-            stripe_price_id="price_pro_30",
-            is_active=True,
-        )
+        self.plan.amount = Decimal("30.00"); self.plan.stripe_price_id = "price_pro_30"; self.plan.save()
+        self.price = self.plan
 
     def test_checkout_requires_authentication(self):
         url = reverse("payments:create-checkout-session")

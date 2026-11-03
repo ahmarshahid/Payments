@@ -37,16 +37,16 @@ urlpatterns = [
     # ── Stripe Webhooks ────────────────────────────────────────────────────────
     path("webhooks/stripe/",        StripeWebhookView.as_view(),         name="stripe-webhook"),
 
-    # ── Phase 7: Subscription Lifecycle ───────────────────────────────────────
+    # Subscription Lifecycle ───────────────────────────────────────
     path("api/subscriptions/current/",    CurrentSubscriptionView.as_view(),    name="subscription-current"),
     path("api/subscriptions/cancel/",     CancelSubscriptionView.as_view(),     name="subscription-cancel"),
     path("api/subscriptions/reactivate/", ReactivateSubscriptionView.as_view(), name="subscription-reactivate"),
 
-    # ── Phase 8: Usage & Entitlement ──────────────────────────────────────────
+    #  Usage & Entitlement ──────────────────────────────────────────
     path("api/usage/", UsageSummaryView.as_view(), name="usage-summary"),
     path("api/usage/check/<slug:feature_slug>/", FeatureAccessCheckView.as_view(), name="usage-check"),
 
-    # ── Phase 9: Billing history & portal ─────────────────────────────────────
+    #  Billing history & portal ─────────────────────────────────────
     path("api/billing/history/", BillingHistoryView.as_view(), name="billing-history"),
     path("api/billing/portal/", CreateBillingPortalSessionView.as_view(), name="billing-portal"),
 ]

@@ -8,11 +8,10 @@ from payments.models import (
     Feature,
     Plan,
     PlanFeature,
-    PlanPrice,
     StripeCustomer,
     StripePayment,
 )
-from payments.validators import PlanFeatureConfigValidator, PlanPriceValidator
+from payments.validators import PlanFeatureConfigValidator
 
 
 
@@ -58,7 +57,6 @@ class PlanFeatureSerializer(serializers.ModelSerializer):
             "feature_type",
             "is_enabled",
             "limit",
-            "unit",
             "created_at",
             "updated_at",
         ]
@@ -70,86 +68,22 @@ class PlanFeatureSerializer(serializers.ModelSerializer):
             feature = attrs.get("feature") or (self.instance.feature if self.instance else None)
             is_enabled = attrs.get("is_enabled", getattr(self.instance, "is_enabled", True))
             limit = attrs.get("limit", getattr(self.instance, "limit", None))
-            unit = attrs.get("unit", getattr(self.instance, "unit", ""))
 
         PlanFeatureConfigValidator.validate(TempPlanFeature())
         return attrs
 
 
-class PlanPriceSerializer(serializers.ModelSerializer):
-    """
-    Serializer for PlanPrice model.
-    Validates amounts, currencies, intervals, and Stripe Price IDs via PlanPriceValidator.
-    """
-
-    billing_interval_display = serializers.CharField(
-        source="get_billing_interval_display", read_only=True
-    )
-    amount_in_cents = serializers.IntegerField(
-        source="get_amount_in_cents", read_only=True
-    )
-    is_synced = serializers.BooleanField(
-        source="is_synced_with_stripe", read_only=True
-    )
-
-    class Meta:
-        model = PlanPrice
-        fields = [
-            "id",
-            "plan",
-            "amount",
-            "amount_in_cents",
-            "currency",
-            "billing_interval",
-            "billing_interval_display",
-            "stripe_price_id",
-            "is_synced",
-            "is_active",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at", "amount_in_cents", "is_synced"]
-
-    def validate(self, attrs):
-        """Delegate validation to centralized PlanPriceValidator."""
-        class TempPlanPrice:
-            amount = attrs.get("amount", getattr(self.instance, "amount", None))
-            currency = attrs.get("currency", getattr(self.instance, "currency", "usd"))
-            billing_interval = attrs.get(
-                "billing_interval", getattr(self.instance, "billing_interval", "month")
-            )
-            stripe_price_id = attrs.get(
-                "stripe_price_id", getattr(self.instance, "stripe_price_id", None)
-            )
-
-        PlanPriceValidator.validate(TempPlanPrice())
-        return attrs
-
-
 class PlanSerializer(serializers.ModelSerializer):
-    """
-    Serializer for Plan model with nested PlanFeatures and PlanPrices.
-    """
-
+    """Public representation of a plan and its current price."""
     features = PlanFeatureSerializer(source="plan_features", many=True, read_only=True)
-    prices = PlanPriceSerializer(many=True, read_only=True)
+    amount_in_cents = serializers.IntegerField(source="get_amount_in_cents", read_only=True)
+    billing_interval_display = serializers.CharField(source="get_billing_interval_display", read_only=True)
+    is_synced = serializers.BooleanField(source="is_synced_with_stripe", read_only=True)
 
     class Meta:
         model = Plan
-        fields = [
-            "id",
-            "name",
-            "slug",
-            "description",
-            "is_active",
-            "features",
-            "prices",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "created_at", "updated_at"]
-
-
+        fields = ["id", "name", "slug", "description", "is_active", "amount", "amount_in_cents", "currency", "billing_interval", "billing_interval_display", "stripe_price_id", "is_synced", "features", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "amount_in_cents", "is_synced"]
 class StripeCustomerSerializer(serializers.ModelSerializer):
     """
     Serializer for StripeCustomer model.
@@ -193,13 +127,13 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     Includes the currently active SubscriptionPeriod as a nested object.
     """
 
-    plan_name        = serializers.CharField(source="plan_price.plan.name", read_only=True)
-    plan_slug        = serializers.CharField(source="plan_price.plan.slug", read_only=True)
+    plan_name        = serializers.CharField(source="plan.name", read_only=True)
+    plan_slug        = serializers.CharField(source="plan.slug", read_only=True)
     amount           = serializers.DecimalField(
-        source="plan_price.amount", max_digits=10, decimal_places=2, read_only=True
+        max_digits=10, decimal_places=2, read_only=True
     )
-    currency         = serializers.CharField(source="plan_price.currency", read_only=True)
-    billing_interval = serializers.CharField(source="plan_price.billing_interval", read_only=True)
+    currency         = serializers.CharField(read_only=True)
+    billing_interval = serializers.CharField(read_only=True)
     is_active               = serializers.BooleanField(read_only=True)
     is_past_due             = serializers.BooleanField(read_only=True)
     is_pending_cancellation = serializers.BooleanField(read_only=True)
@@ -242,10 +176,10 @@ class StripePaymentSerializer(serializers.ModelSerializer):
     """Read-only representation of a ledger payment."""
 
     plan_name = serializers.CharField(
-        source="subscription.plan_price.plan.name", read_only=True
+        source="subscription.plan.name", read_only=True
     )
     billing_interval = serializers.CharField(
-        source="subscription.plan_price.billing_interval", read_only=True
+        source="subscription.billing_interval", read_only=True
     )
 
     class Meta:
@@ -269,5 +203,3 @@ class CreateBillingPortalSerializer(serializers.Serializer):
     """Request body for the billing portal endpoint."""
 
     return_url = serializers.URLField(required=False, allow_blank=True)
-
-

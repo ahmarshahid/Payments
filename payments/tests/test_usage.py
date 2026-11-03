@@ -17,7 +17,6 @@ from payments.models import (
     FeatureUsage,
     Plan,
     PlanFeature,
-    PlanPrice,
     Subscription,
     SubscriptionPeriod,
 )
@@ -35,16 +34,13 @@ class UsageTestMixin:
             password="password",
         )
         self.plan = Plan.objects.create(name="Usage Plan", slug="usage-plan")
-        self.plan_price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount="20.00",
-            currency="usd",
-            billing_interval="month",
-            stripe_price_id="price_usage_month",
-        )
+        self.plan.amount = "20.00"
+        self.plan.stripe_price_id = "price_usage_month"
+        self.plan.save()
         self.subscription = Subscription.objects.create(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_usage_001",
             status="active",
             current_period_start=timezone.now(),
@@ -68,7 +64,6 @@ class UsageTestMixin:
             feature=feature,
             is_enabled=enabled,
             limit=limit,
-            unit="requests" if feature_type == FeatureTypeChoice.LIMIT else "",
         )
         return feature
 

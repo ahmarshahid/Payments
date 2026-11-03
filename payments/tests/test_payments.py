@@ -12,7 +12,6 @@ from rest_framework.test import APIClient
 from payments.choices import PaymentStatusChoice, PeriodStatusChoice, SubscriptionStatusChoice
 from payments.models import (
     Plan,
-    PlanPrice,
     StripeCustomer,
     StripePayment,
     Subscription,
@@ -40,17 +39,14 @@ class PaymentTestMixin:
             password="password",
         )
         self.plan = Plan.objects.create(name="Payment Plan", slug="payment-plan")
-        self.plan_price = PlanPrice.objects.create(
-            plan=self.plan,
-            amount="29.00",
-            currency="usd",
-            billing_interval="month",
-            stripe_price_id="price_payment_month",
-        )
+        self.plan.amount = "29.00"
+        self.plan.stripe_price_id = "price_payment_month"
+        self.plan.save()
         now = timezone.now()
         self.subscription = Subscription.objects.create(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_payment_001",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=now,
@@ -120,7 +116,8 @@ class StripePaymentModelTests(PaymentTestMixin, TestCase):
     def test_manager_for_user_returns_only_own_payments(self):
         other_subscription = Subscription.objects.create(
             user=self.other_user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_payment_002",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=self.subscription.current_period_start,

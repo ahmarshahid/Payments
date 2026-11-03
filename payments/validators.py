@@ -14,7 +14,7 @@ class PlanFeatureConfigValidator:
     Class-based validator for PlanFeature configurations.
     Enforces business rules distinguishing TOGGLE features from LIMIT features:
       - TOGGLE features: Must NOT define numerical limits; configured strictly via is_enabled.
-      - LIMIT features: Must specify a positive numerical limit and a measurement unit.
+      - LIMIT features: Must specify a non-negative numerical limit.
     """
 
     @classmethod
@@ -23,7 +23,7 @@ class PlanFeatureConfigValidator:
         Validates the PlanFeature model instance or equivalent data structure.
         
         Args:
-            plan_feature: PlanFeature instance or object with feature, is_enabled, limit, unit.
+            plan_feature: PlanFeature instance or object with feature, is_enabled, and limit.
             
         Raises:
             ValidationError: When configuration contradicts feature type rules.
@@ -38,7 +38,6 @@ class PlanFeatureConfigValidator:
         feature_type = getattr(feature, "type", None)
         is_enabled = getattr(plan_feature, "is_enabled", False)
         limit = getattr(plan_feature, "limit", None)
-        unit = getattr(plan_feature, "unit", "")
 
         if feature_type == FeatureTypeChoice.TOGGLE:
             if limit is not None:
@@ -56,12 +55,6 @@ class PlanFeatureConfigValidator:
             elif limit < 0:
                 errors["limit"] = _(
                     "Usage limit must be a non-negative number."
-                )
-
-            if not unit or not unit.strip():
-                errors["unit"] = _(
-                    f"Feature '{feature.name}' is a LIMIT feature. "
-                    f"A measurement unit (e.g., 'requests', 'GB', 'seats') is required."
                 )
 
         if errors:
@@ -82,23 +75,23 @@ class SlugFormatValidator:
             )
 
 
-class PlanPriceValidator:
+class PlanValidator:
     """
-    Class-based validator for PlanPrice instances. 
+    Class-based validator for Plan pricing fields.
     Enforces rules on currency formatting, non-negative amounts,
     and valid billing intervals.
     """
 
     @classmethod
-    def validate(cls, plan_price: Any) -> None:
+    def validate(cls, plan: Any) -> None:
         from decimal import Decimal
         from payments.choices import BillingIntervalChoice
 
         errors = {}
-        amount = getattr(plan_price, "amount", None)
-        currency = getattr(plan_price, "currency", "")
-        billing_interval = getattr(plan_price, "billing_interval", "")
-        stripe_price_id = getattr(plan_price, "stripe_price_id", None)
+        amount = getattr(plan, "amount", None)
+        currency = getattr(plan, "currency", "")
+        billing_interval = getattr(plan, "billing_interval", "")
+        stripe_price_id = getattr(plan, "stripe_price_id", None)
 
         if amount is None or amount < Decimal("0.00"):
             errors["amount"] = _("Price amount must be greater than or equal to 0.00.")

@@ -12,7 +12,12 @@ from payments.stripe.serializers import (
     CreateCheckoutSessionSerializer,
     CheckoutSessionResponseSerializer,
 )
-from payments.stripe.services import StripeCheckoutService
+
+import stripe
+from payments.stripe.constants import STRIPE_SIGNATURE_HEADER
+from payments.stripe.handlers.dispatcher import StripeEventDispatcher
+from payments.stripe.services import StripeWebhookVerificationService, StripeCheckoutService
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +35,14 @@ class CreateCheckoutSessionView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        plan_price = serializer.validated_data["plan_price_id"]
+        plan = serializer.validated_data["plan"]
         success_url = serializer.validated_data.get("success_url")
         cancel_url = serializer.validated_data.get("cancel_url")
 
         try:
             session = StripeCheckoutService.create_subscription_checkout_session(
                 user=request.user,
-                plan_price=plan_price,
+                plan=plan,
                 success_url=success_url,
                 cancel_url=cancel_url,
             )
@@ -103,10 +108,6 @@ class StripeWebhookView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, *args, **kwargs) -> Response:
-        import stripe
-        from payments.stripe.constants import STRIPE_SIGNATURE_HEADER
-        from payments.stripe.handlers.dispatcher import StripeEventDispatcher
-        from payments.stripe.services import StripeWebhookVerificationService
 
         payload = request.body
         sig_header = request.META.get(STRIPE_SIGNATURE_HEADER, "")

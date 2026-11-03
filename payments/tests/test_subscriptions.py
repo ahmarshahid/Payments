@@ -28,7 +28,6 @@ from payments.models import (
     Feature,
     Plan,
     PlanFeature,
-    PlanPrice,
     StripeCustomer,
     Subscription,
     SubscriptionPeriod,
@@ -50,13 +49,10 @@ def _make_user(username="testuser", email="test@example.com"):
     return User.objects.create_user(username=username, email=email, password="pass")
 
 
-def _make_plan_price(plan_name="Pro", amount="29.00", interval="month"):
-    plan = Plan.objects.create(name=plan_name, slug=plan_name.lower())
-    return PlanPrice.objects.create(
-        plan=plan,
-        amount=amount,
-        currency="usd",
-        billing_interval=interval,
+def _make_plan(plan_name="Pro", amount="29.00", interval="month"):
+    return Plan.objects.create(
+        name=plan_name, slug=plan_name.lower(), amount=amount,
+        currency="usd", billing_interval=interval,
         stripe_price_id=f"price_{plan_name.lower()}_{interval}",
     )
 
@@ -67,7 +63,7 @@ def _now_plus(days: int):
 
 def _make_subscription(
     user,
-    plan_price,
+    plan,
     status=SubscriptionStatusChoice.ACTIVE,
     stripe_id=None,
     cancel_at_period_end=False,
@@ -76,8 +72,9 @@ def _make_subscription(
     # Bypass full_clean for direct DB insertions in setup (avoids one-active rule conflicts)
     sub = Subscription(
         user=user,
-        plan_price=plan_price,
-        stripe_subscription_id=stripe_id or f"sub_test_{user.pk}_{plan_price.pk}",
+        plan=plan,
+        amount=plan.amount, currency=plan.currency, billing_interval=plan.billing_interval, stripe_price_id=plan.stripe_price_id,
+        stripe_subscription_id=stripe_id or f"sub_test_{user.pk}_{plan.pk}",
         status=status,
         current_period_start=timezone.now(),
         current_period_end=_now_plus(30),
@@ -109,7 +106,7 @@ def _make_period(subscription, status=PeriodStatusChoice.ACTIVE, offset_days=0):
 # Simpler helpers using model.objects.create bypassing save() override
 # ==============================================================================
 
-def _create_subscription_raw(user, plan_price, status=SubscriptionStatusChoice.ACTIVE,
+def _create_subscription_raw(user, plan, status=SubscriptionStatusChoice.ACTIVE,
                               stripe_id=None, cancel_at_period_end=False,
                               period_start=None, period_end=None):
     """Create a Subscription directly in the DB, bypassing full_clean."""
@@ -119,8 +116,9 @@ def _create_subscription_raw(user, plan_price, status=SubscriptionStatusChoice.A
     Subscription.__init__(
         sub,
         user=user,
-        plan_price=plan_price,
-        stripe_subscription_id=stripe_id or f"sub_{user.pk}_{plan_price.pk}_{status}",
+        plan=plan,
+        amount=plan.amount, currency=plan.currency, billing_interval=plan.billing_interval, stripe_price_id=plan.stripe_price_id,
+        stripe_subscription_id=stripe_id or f"sub_{user.pk}_{plan.pk}_{status}",
         status=status,
         current_period_start=period_start or now,
         current_period_end=period_end or (now + timedelta(days=30)),
@@ -156,13 +154,14 @@ class SubscriptionModelValidationTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
+        self.plan = _make_plan()
 
     def test_create_valid_subscription_passes_validation(self):
         """A subscription with a valid sub_ ID and proper dates should save cleanly."""
         sub = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_valid12345",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=timezone.now(),
@@ -176,7 +175,8 @@ class SubscriptionModelValidationTest(TestCase):
         """stripe_subscription_id must begin with 'sub_'."""
         sub = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="INVALID_ABC123",
             status=SubscriptionStatusChoice.ACTIVE,
         )
@@ -189,7 +189,8 @@ class SubscriptionModelValidationTest(TestCase):
         # First active subscription saved cleanly
         first = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_first001",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=timezone.now(),
@@ -201,7 +202,8 @@ class SubscriptionModelValidationTest(TestCase):
         # Second ACTIVE subscription for same user must fail
         second = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_second002",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=timezone.now(),
@@ -214,14 +216,15 @@ class SubscriptionModelValidationTest(TestCase):
     def test_canceled_subscription_does_not_block_new_active(self):
         """A historical CANCELED subscription must not block a new ACTIVE one."""
         _create_subscription_raw(
-            self.user, self.plan_price,
+            self.user, self.plan,
             status=SubscriptionStatusChoice.CANCELED,
             stripe_id="sub_old_canceled",
         )
         # New ACTIVE subscription should succeed
         new_sub = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_new_active",
             status=SubscriptionStatusChoice.ACTIVE,
             current_period_start=timezone.now(),
@@ -238,7 +241,8 @@ class SubscriptionModelValidationTest(TestCase):
         now = timezone.now()
         sub = Subscription(
             user=self.user,
-            plan_price=self.plan_price,
+            plan=self.plan,
+            amount=self.plan.amount, currency=self.plan.currency, billing_interval=self.plan.billing_interval, stripe_price_id=self.plan.stripe_price_id,
             stripe_subscription_id="sub_bad_dates",
             status=SubscriptionStatusChoice.INCOMPLETE,
             current_period_start=now,
@@ -257,8 +261,8 @@ class SubscriptionPeriodValidationTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
-        self.sub = _create_subscription_raw(self.user, self.plan_price)
+        self.plan = _make_plan()
+        self.sub = _create_subscription_raw(self.user, self.plan)
 
     def test_valid_period_saves_cleanly(self):
         now = timezone.now()
@@ -302,11 +306,11 @@ class SubscriptionPropertiesTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
+        self.plan = _make_plan()
 
     def _sub_with_status(self, status, cancel_at_period_end=False, stripe_suffix=""):
         return _create_subscription_raw(
-            self.user, self.plan_price,
+            self.user, self.plan,
             status=status,
             stripe_id=f"sub_prop_{status}{stripe_suffix}",
             cancel_at_period_end=cancel_at_period_end,
@@ -360,7 +364,7 @@ class SubscriptionManagerTest(TestCase):
     def setUp(self):
         self.u1 = _make_user("user1", "u1@test.com")
         self.u2 = _make_user("user2", "u2@test.com")
-        self.pp = _make_plan_price()
+        self.pp = _make_plan()
 
     def test_active_queryset_returns_active_and_trialing_only(self):
         _create_subscription_raw(self.u1, self.pp, SubscriptionStatusChoice.ACTIVE,
@@ -417,7 +421,7 @@ class CheckoutSessionCompletedHandlerTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
+        self.plan = _make_plan()
         # Create StripeCustomer mapping
         self.stripe_customer = StripeCustomer.objects.create(
             user=self.user,
@@ -432,7 +436,7 @@ class CheckoutSessionCompletedHandlerTest(TestCase):
                     "customer": "cus_test_webhook",
                     "subscription": stripe_sub_id,
                     "metadata": {
-                        "django_plan_price_id": str(self.plan_price.pk),
+                        "django_plan_id": str(self.plan.pk),
                     },
                 }
             }
@@ -446,7 +450,7 @@ class CheckoutSessionCompletedHandlerTest(TestCase):
             "current_period_start": int(now.timestamp()),
             "current_period_end": int((now + timedelta(days=30)).timestamp()),
             "cancel_at_period_end": False,
-            "items": {"data": [{"price": {"id": self.plan_price.stripe_price_id}}]},
+            "items": {"data": [{"price": {"id": self.plan.stripe_price_id}}]},
         }
         return mock_sub
 
@@ -467,7 +471,7 @@ class CheckoutSessionCompletedHandlerTest(TestCase):
         sub = Subscription.objects.first()
         self.assertEqual(sub.stripe_subscription_id, stripe_sub_id)
         self.assertEqual(sub.user, self.user)
-        self.assertEqual(sub.plan_price, self.plan_price)
+        self.assertEqual(sub.plan, self.plan)
         self.assertEqual(sub.status, "active")
 
         # Verify SubscriptionPeriod created
@@ -498,9 +502,9 @@ class SubscriptionUpdatedHandlerTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
+        self.plan = _make_plan()
         self.subscription = _create_subscription_raw(
-            self.user, self.plan_price, stripe_id="sub_update_test"
+            self.user, self.plan, stripe_id="sub_update_test"
         )
         self.period = _create_period_raw(self.subscription, status=PeriodStatusChoice.ACTIVE)
 
@@ -519,7 +523,7 @@ class SubscriptionUpdatedHandlerTest(TestCase):
                     "current_period_end":   int(pe.timestamp()),
                     "cancel_at_period_end": cancel_at_period_end,
                     "items": {
-                        "data": [{"price": {"id": self.plan_price.stripe_price_id}}]
+                        "data": [{"price": {"id": self.plan.stripe_price_id}}]
                     },
                 }
             }
@@ -574,9 +578,9 @@ class SubscriptionDeletedHandlerTest(TestCase):
 
     def setUp(self):
         self.user = _make_user()
-        self.plan_price = _make_plan_price()
+        self.plan = _make_plan()
         self.subscription = _create_subscription_raw(
-            self.user, self.plan_price, stripe_id="sub_del_test"
+            self.user, self.plan, stripe_id="sub_del_test"
         )
         self.period = _create_period_raw(self.subscription, status=PeriodStatusChoice.ACTIVE)
 
