@@ -1,0 +1,45 @@
+# Environment variables
+.env
+.env.local
+.env.example
+*.env
+!.env.example
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Local Git metadata backups
+.git-backup/
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Django
+*.log
+local_settings.py
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+media/
+staticfiles/
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
