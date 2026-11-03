@@ -49,7 +49,7 @@ class EntitlementService:
     ) -> PlanFeature | None:
         try:
             return PlanFeature.objects.select_related("feature").get(
-                plan=subscription.plan_price.plan,
+                plan=subscription.plan,
                 feature__slug=feature_slug,
                 is_enabled=True,
             )
@@ -141,7 +141,7 @@ class EntitlementService:
             return []
 
         plan_features = PlanFeature.objects.filter(
-            plan=subscription.plan_price.plan
+            plan=subscription.plan
         ).select_related("feature")
         current_period = SubscriptionPeriod.objects.current(subscription)
         summary: list[dict[str, Any]] = []
@@ -153,7 +153,6 @@ class EntitlementService:
                 "feature_type": plan_feature.feature.type,
                 "is_enabled": plan_feature.is_enabled,
                 "limit": plan_feature.limit,
-                "unit": plan_feature.unit or "",
                 "used_amount": None,
                 "remaining": None,
                 "percent_used": None,
@@ -179,7 +178,7 @@ class EntitlementService:
     ) -> None:
         """Create zeroed usage records for enabled LIMIT features in a new period."""
         limit_features = PlanFeature.objects.filter(
-            plan=subscription.plan_price.plan,
+            plan=subscription.plan,
             feature__type=FeatureTypeChoice.LIMIT,
             is_enabled=True,
         ).select_related("feature")

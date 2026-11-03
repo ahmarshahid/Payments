@@ -79,11 +79,9 @@ class PlanAndPlanFeatureTest(TestCase):
             feature=self.limit_feature,
             is_enabled=True,
             limit=5000,
-            unit="requests",
         )
         self.assertEqual(pf.limit, 5000)
-        self.assertEqual(pf.unit, "requests")
-        self.assertIn("5000 requests", str(pf))
+        self.assertIn("5000", str(pf))
 
     def test_invalid_limit_plan_feature_missing_limit_raises_validation_error(self):
         """Limit features must specify a numerical limit."""
@@ -93,21 +91,8 @@ class PlanAndPlanFeatureTest(TestCase):
                 feature=self.limit_feature,
                 is_enabled=True,
                 limit=None,  # Invalid for limit feature!
-                unit="requests",
             )
         self.assertIn("limit", ctx.exception.message_dict)
-
-    def test_invalid_limit_plan_feature_missing_unit_raises_validation_error(self):
-        """Limit features must specify a unit."""
-        with self.assertRaises(ValidationError) as ctx:
-            PlanFeature.objects.create(
-                plan=self.plan,
-                feature=self.limit_feature,
-                is_enabled=True,
-                limit=500,
-                unit="",  # Invalid for limit feature!
-            )
-        self.assertIn("unit", ctx.exception.message_dict)
 
     def test_duplicate_feature_assignment_raises_integrity_error(self):
         """Cannot assign the same feature twice to the same plan."""
@@ -134,7 +119,6 @@ class PlanAndPlanFeatureTest(TestCase):
             feature=self.limit_feature,
             is_enabled=True,
             limit=1000,
-            unit="requests",
         )
 
         serializer = PlanSerializer(self.plan)

@@ -25,7 +25,6 @@ class StripeWebhookEventModelTest(TestCase):
         event = StripeWebhookEvent.objects.create(
             stripe_event_id="evt_test_123456",
             event_type=StripeEventType.CHECKOUT_SESSION_COMPLETED,
-            payload={"id": "evt_test_123456"},
         )
         self.assertEqual(event.status, WebhookEventStatusChoice.PENDING)
         self.assertFalse(event.is_processed)

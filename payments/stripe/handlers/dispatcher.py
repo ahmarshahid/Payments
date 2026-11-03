@@ -68,7 +68,6 @@ class StripeEventDispatcher:
                 stripe_event_id=event_id,
                 event_type=event_type,
                 status=WebhookEventStatusChoice.PENDING,
-                payload=event_payload,
             )
 
         # 3. Lookup handler from dictionary dispatch table

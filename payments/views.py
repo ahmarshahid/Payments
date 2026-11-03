@@ -42,7 +42,7 @@ class PlanListAPIView(ListAPIView):
     """
     permission_classes = [AllowAny]
     serializer_class   = PlanSerializer
-    queryset           = Plan.objects.active().prefetch_related("plan_features__feature", "prices")
+    queryset           = Plan.objects.active().prefetch_related("plan_features__feature")
 
 
 class PlanDetailAPIView(RetrieveAPIView):
@@ -52,7 +52,7 @@ class PlanDetailAPIView(RetrieveAPIView):
     permission_classes = [AllowAny]
     serializer_class   = PlanSerializer
     lookup_field       = "slug"
-    queryset           = Plan.objects.active().prefetch_related("plan_features__feature", "prices")
+    queryset           = Plan.objects.active().prefetch_related("plan_features__feature")
 
 
 # ==============================================================================
@@ -199,7 +199,7 @@ class FeatureAccessCheckView(APIView):
         subscription = Subscription.objects.get_active_for_user(request.user)
         if subscription:
             plan_feature = PlanFeature.objects.filter(
-                plan=subscription.plan_price.plan,
+                plan=subscription.plan,
                 feature__slug=feature_slug,
             ).select_related("feature").first()
             if plan_feature and plan_feature.feature.type == FeatureTypeChoice.LIMIT:

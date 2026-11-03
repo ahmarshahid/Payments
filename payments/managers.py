@@ -58,30 +58,6 @@ class PlanFeatureManager(models.Manager.from_queryset(PlanFeatureQuerySet)):
     pass
 
 
-class PlanPriceQuerySet(models.QuerySet):
-    """Custom QuerySet for PlanPrice model."""
-
-    def active(self) -> Self:
-        return self.filter(is_active=True)
-
-    def monthly(self) -> Self:
-        return self.filter(billing_interval=BillingIntervalChoice.MONTH)
-
-    def yearly(self) -> Self:
-        return self.filter(billing_interval=BillingIntervalChoice.YEAR)
-
-    def for_plan(self, plan: models.Model) -> Self:
-        return self.filter(plan=plan)
-
-    def with_stripe_id(self) -> Self:
-        return self.filter(stripe_price_id__isnull=False).exclude(stripe_price_id="")
-
-
-class PlanPriceManager(models.Manager.from_queryset(PlanPriceQuerySet)):
-    """Manager for PlanPrice model."""
-    pass
-
-
 class StripeCustomerQuerySet(models.QuerySet):
     """Custom QuerySet for StripeCustomer model."""
 
@@ -173,14 +149,14 @@ class SubscriptionManager(models.Manager):
     def get_active_for_user(self, user: models.Model):
         """
         Returns the single ACTIVE or TRIALING subscription for a user,
-        with plan_price and plan pre-selected in one query.
+        with plan pre-selected in one query.
         Returns None if no active subscription exists.
         """
         return (
             self.get_queryset()
             .active()
             .filter(user=user)
-            .select_related("plan_price__plan")
+            .select_related("plan")
             .first()
         )
 
@@ -301,5 +277,5 @@ class StripePaymentManager(models.Manager):
 
     def for_user(self, user: models.Model) -> StripePaymentQuerySet:
         return self.get_queryset().for_user(user).select_related(
-            "subscription__plan_price__plan", "period"
+            "subscription__plan", "period"
         )

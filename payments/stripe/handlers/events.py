@@ -18,7 +18,7 @@ from typing import Any, Dict
 from django.utils import timezone
 
 from payments.models import (
-    PlanPrice,
+    Plan,
     StripeCustomer,
     StripePayment,
     Subscription,
@@ -56,7 +56,7 @@ def handle_checkout_session_completed(event_payload: Dict[str, Any]) -> None:
 
     Steps:
       1. Resolve StripeCustomer → Django User from session.customer.
-      2. Resolve PlanPrice from session.metadata.django_plan_price_id.
+      2. Resolve Plan from session.metadata.django_plan_id.
       3. Retrieve fresh Stripe Subscription object for accurate period dates.
       4. Create or update local Subscription (status, period start/end, started_at).
       5. Open the initial SubscriptionPeriod record.
@@ -89,17 +89,17 @@ def handle_checkout_session_completed(event_payload: Dict[str, Any]) -> None:
         )
     user = stripe_customer.user
 
-    # 2. Resolve local PlanPrice from metadata
-    plan_price_id = metadata.get("django_plan_price_id")
-    if not plan_price_id:
+    # 2. Resolve local Plan from metadata
+    plan_id = metadata.get("django_plan_id")
+    if not plan_id:
         raise ValueError(
-            "checkout.session.completed: metadata missing 'django_plan_price_id'."
+            "checkout.session.completed: metadata missing 'django_plan_id'."
         )
     try:
-        plan_price = PlanPrice.objects.select_related("plan").get(pk=int(plan_price_id))
-    except (PlanPrice.DoesNotExist, ValueError, TypeError):
+        plan = Plan.objects.get(pk=int(plan_id))
+    except (Plan.DoesNotExist, ValueError, TypeError):
         raise ValueError(
-            f"checkout.session.completed: PlanPrice pk={plan_price_id!r} not found."
+            f"checkout.session.completed: Plan pk={plan_id!r} not found."
         )
 
     # 3. Fetch fresh Stripe Subscription for accurate period boundaries
@@ -112,7 +112,11 @@ def handle_checkout_session_completed(event_payload: Dict[str, Any]) -> None:
         stripe_subscription_id=stripe_sub_id,
         defaults={
             "user":                 user,
-            "plan_price":           plan_price,
+            "plan":               plan,
+            "amount":              plan.amount,
+            "currency":            plan.currency,
+            "billing_interval":    plan.billing_interval,
+            "stripe_price_id":     plan.stripe_price_id,
             "status":               stripe_sub["status"],
             "current_period_start": period_start,
             "current_period_end":   period_end,
@@ -178,7 +182,7 @@ def handle_customer_subscription_updated(event_payload: Dict[str, Any]) -> None:
     stripe_sub_id   = stripe_sub.get("id")
 
     try:
-        subscription = Subscription.objects.select_related("plan_price").get(
+        subscription = Subscription.objects.select_related("plan").get(
             stripe_subscription_id=stripe_sub_id
         )
     except Subscription.DoesNotExist:
@@ -205,20 +209,24 @@ def handle_customer_subscription_updated(event_payload: Dict[str, Any]) -> None:
         new_stripe_price_id = items[0].get("price", {}).get("id")
         if (
             new_stripe_price_id
-            and subscription.plan_price.stripe_price_id != new_stripe_price_id
+            and subscription.plan.stripe_price_id != new_stripe_price_id
         ):
             try:
-                new_plan_price = PlanPrice.objects.get(stripe_price_id=new_stripe_price_id)
-                subscription.plan_price = new_plan_price
+                new_plan = Plan.objects.get(stripe_price_id=new_stripe_price_id)
+                subscription.plan = new_plan
+                subscription.amount = new_plan.amount
+                subscription.currency = new_plan.currency
+                subscription.billing_interval = new_plan.billing_interval
+                subscription.stripe_price_id = new_plan.stripe_price_id or new_stripe_price_id
                 logger.info(
                     "Plan change detected for subscription '%s': new price=%s",
                     stripe_sub_id,
                     new_stripe_price_id,
                 )
-            except PlanPrice.DoesNotExist:
+            except Plan.DoesNotExist:
                 logger.warning(
                     "Plan change for subscription '%s': new Stripe price '%s' "
-                    "not found locally. Skipping plan_price update.",
+                    "not found locally. Skipping plan update.",
                     stripe_sub_id,
                     new_stripe_price_id,
                 )

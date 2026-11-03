@@ -7,7 +7,7 @@ import logging
 from typing import Optional
 from django.conf import settings
 import stripe
-from payments.models import Plan, PlanPrice
+from payments.models import Plan
 from payments.stripe.client import StripeClient
 
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class StripeCatalogService:
     """
-    Class-based service for synchronizing Django Plans and PlanPrices
+    Class-based service for synchronizing Django Plans and Plans
     with Stripe Products and recurring Prices.
     """
 
@@ -62,12 +62,12 @@ class StripeCatalogService:
             raise
 
     @classmethod
-    def create_recurring_price(cls, plan_price: PlanPrice, stripe_product_id: str) -> str:
+    def create_recurring_price(cls, plan: Plan, stripe_product_id: str) -> str:
         """
-        Creates a recurring Price in Stripe for a specific PlanPrice.
+        Creates a recurring Price in Stripe for a specific Plan.
         
         Args:
-            plan_price: The PlanPrice instance.
+            plan: The Plan instance.
             stripe_product_id: The Stripe Product ID to attach the price to.
             
         Returns:
@@ -78,37 +78,37 @@ class StripeCatalogService:
         try:
             price = stripe.Price.create(
                 product=stripe_product_id,
-                unit_amount=plan_price.get_amount_in_cents(),
-                currency=plan_price.currency,
+                unit_amount=plan.get_amount_in_cents(),
+                currency=plan.currency,
                 recurring={
-                    "interval": plan_price.billing_interval,
+                    "interval": plan.billing_interval,
                 },
                 metadata={
-                    "django_price_id": str(plan_price.id),
-                    "django_plan_slug": plan_price.plan.slug,
-                    "interval": plan_price.billing_interval,
+                    "django_plan_id": str(plan.id),
+                    "django_plan_slug": plan.slug,
+                    "interval": plan.billing_interval,
                 },
             )
-            logger.info("Created Stripe Price '%s' for PlanPrice #%s", price.id, plan_price.id)
+            logger.info("Created Stripe Price '%s' for Plan #%s", price.id, plan.id)
             return price.id
         except stripe.StripeError as e:
-            logger.error("Failed to create Stripe Price for PlanPrice #%s: %s", plan_price.id, str(e))
+            logger.error("Failed to create Stripe Price for Plan #%s: %s", plan.id, str(e))
             raise
 
     @classmethod
-    def sync_plan_price(cls, plan_price: PlanPrice) -> PlanPrice:
+    def sync_plan(cls, plan: Plan) -> Plan:
         """
         High-level synchronization orchestrator:
         1. Ensures a Stripe Product exists for the plan.
         2. Creates a recurring Price in Stripe.
-        3. Updates and saves plan_price.stripe_price_id.
+        3. Updates and saves plan.stripe_price_id.
         """
-        product_id = cls.create_or_get_product(plan_price.plan)
-        stripe_price_id = cls.create_recurring_price(plan_price, product_id)
+        product_id = cls.create_or_get_product(plan)
+        stripe_price_id = cls.create_recurring_price(plan, product_id)
 
-        plan_price.stripe_price_id = stripe_price_id
-        plan_price.save(update_fields=["stripe_price_id", "updated_at"])
-        return plan_price
+        plan.stripe_price_id = stripe_price_id
+        plan.save(update_fields=["stripe_price_id", "updated_at"])
+        return plan
 
 
 class StripeCustomerService:
@@ -194,7 +194,7 @@ class StripeCheckoutService:
     def create_subscription_checkout_session(
         cls,
         user,
-        plan_price: PlanPrice,
+        plan: Plan,
         success_url: Optional[str] = None,
         cancel_url: Optional[str] = None,
     ) -> stripe.checkout.Session:
@@ -203,7 +203,7 @@ class StripeCheckoutService:
 
         Args:
             user: Django User instance.
-            plan_price: The PlanPrice to subscribe to.
+            plan: The Plan to subscribe to.
             success_url: Optional custom redirect URL upon completion.
             cancel_url: Optional custom redirect URL upon cancellation.
 
@@ -213,9 +213,9 @@ class StripeCheckoutService:
         StripeClient.initialize()
 
         # 1. Ensure the plan price is synced with Stripe
-        if not plan_price.is_synced_with_stripe:
-            logger.info("PlanPrice #%s not synced with Stripe. Auto-syncing now...", plan_price.id)
-            plan_price = StripeCatalogService.sync_plan_price(plan_price)
+        if not plan.is_synced_with_stripe:
+            logger.info("Plan #%s not synced with Stripe. Auto-syncing now...", plan.id)
+            plan = StripeCatalogService.sync_plan(plan)
 
         # 2. Retrieve or create Stripe customer for this user
         customer = StripeCustomerService.get_or_create_customer(user)
@@ -233,7 +233,7 @@ class StripeCheckoutService:
                 customer=customer.stripe_customer_id,
                 line_items=[
                     {
-                        "price": plan_price.stripe_price_id,
+                        "price": plan.stripe_price_id,
                         "quantity": 1,
                     }
                 ],
@@ -242,21 +242,21 @@ class StripeCheckoutService:
                 subscription_data={
                     "metadata": {
                         "django_user_id": str(user.id),
-                        "django_plan_price_id": str(plan_price.id),
-                        "django_plan_slug": plan_price.plan.slug,
+                        "django_plan_id": str(plan.id),
+                        "django_plan_slug": plan.slug,
                     }
                 },
                 metadata={
                     "django_user_id": str(user.id),
-                    "django_plan_price_id": str(plan_price.id),
-                    "django_plan_slug": plan_price.plan.slug,
+                    "django_plan_id": str(plan.id),
+                    "django_plan_slug": plan.slug,
                 },
             )
             logger.info(
                 "Created Stripe Checkout Session '%s' for user '%s' on price #%s",
                 session.id,
                 user.username,
-                plan_price.id,
+                plan.id,
             )
             return session
 

@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 from django.utils.translation import gettext_lazy as _
 from payments.models import (
-    Feature, Plan, PlanFeature, PlanPrice,
+    Feature, Plan, PlanFeature,
     StripeCustomer, StripeWebhookEvent,
 
     Subscription, SubscriptionPeriod, FeatureUsage, StripePayment,
@@ -20,19 +20,8 @@ class PlanFeatureInline(admin.TabularInline):
     """
     model = PlanFeature
     extra = 1
-    fields = ["feature", "is_enabled", "limit", "unit"]
+    fields = ["feature", "is_enabled", "limit"]
     autocomplete_fields = ["feature"]
-    show_change_link = True
-
-
-class PlanPriceInline(admin.TabularInline):
-    """
-    Inline editor for PlanPrice options directly within the Plan admin page.
-    """
-    model = PlanPrice
-    extra = 1
-    fields = ["amount", "currency", "billing_interval", "stripe_price_id", "is_active"]
-    readonly_fields = ["stripe_price_id"]
     show_change_link = True
 
 
@@ -69,12 +58,12 @@ class PlanAdmin(admin.ModelAdmin):
     search_fields = ["name", "slug", "description"]
     prepopulated_fields = {"slug": ("name",)}
     readonly_fields = ["created_at", "updated_at"]
-    inlines = [PlanPriceInline, PlanFeatureInline]
+    inlines = [PlanFeatureInline]
     ordering = ["name"]
 
     fieldsets = (
         (None, {
-            "fields": ("name", "slug", "description", "is_active")
+            "fields": ("name", "slug", "description", "amount", "currency", "billing_interval", "stripe_price_id", "is_active")
         }),
         (_("Timestamps"), {
             "fields": ("created_at", "updated_at"),
@@ -84,7 +73,7 @@ class PlanAdmin(admin.ModelAdmin):
 
     @admin.display(description=_("Configured Prices"))
     def price_count(self, obj: Plan) -> int:
-        return obj.prices.count()
+        return 1 if obj.stripe_price_id or obj.amount is not None else 0
 
     @admin.display(description=_("Configured Features"))
     def feature_count(self, obj: Plan) -> int:
@@ -96,7 +85,7 @@ class PlanFeatureAdmin(admin.ModelAdmin):
     """
     Direct administration of Plan-Feature configurations.
     """
-    list_display = ["plan", "feature", "get_feature_type", "is_enabled", "limit", "unit"]
+    list_display = ["plan", "feature", "get_feature_type", "is_enabled", "limit"]
     list_filter = ["plan", "feature__type", "is_enabled"]
     search_fields = ["plan__name", "feature__name"]
     autocomplete_fields = ["plan", "feature"]
@@ -105,52 +94,6 @@ class PlanFeatureAdmin(admin.ModelAdmin):
     @admin.display(description=_("Feature Type"), ordering="feature__type")
     def get_feature_type(self, obj: PlanFeature) -> str:
         return obj.feature.get_type_display()
-
-
-@admin.register(PlanPrice)
-class PlanPriceAdmin(admin.ModelAdmin):
-    """
-    Direct administration of Plan Prices with Stripe synchronization.
-    """
-    list_display = [
-        "plan",
-        "amount",
-        "currency",
-        "billing_interval",
-        "stripe_price_id",
-        "is_synced",
-        "is_active",
-        "created_at",
-    ]
-    list_filter = ["billing_interval", "currency", "is_active", "plan"]
-    search_fields = ["plan__name", "stripe_price_id"]
-    autocomplete_fields = ["plan"]
-    readonly_fields = ["created_at", "updated_at"]
-    actions = ["sync_to_stripe"]
-
-    @admin.display(boolean=True, description=_("Synced with Stripe"))
-    def is_synced(self, obj: PlanPrice) -> bool:
-        return obj.is_synced_with_stripe
-
-    @admin.action(description=_("Synchronize selected prices to Stripe Sandbox"))
-    def sync_to_stripe(self, request, queryset):
-        success_count = 0
-        for price in queryset:
-            try:
-                StripeCatalogService.sync_plan_price(price)
-                success_count += 1
-            except Exception as e:
-                self.message_user(
-                    request,
-                    f"Failed to sync {price}: {str(e)}",
-                    level=messages.ERROR,
-                )
-        if success_count:
-            self.message_user(
-                request,
-                f"Successfully synced {success_count} price(s) to Stripe.",
-                level=messages.SUCCESS,
-            )
 
 
 @admin.register(StripeCustomer)
@@ -181,7 +124,6 @@ class StripeWebhookEventAdmin(admin.ModelAdmin):
         "stripe_event_id",
         "event_type",
         "status",
-        "payload",
         "error_message",
         "processed_at",
         "created_at",
@@ -215,13 +157,13 @@ class SubscriptionAdmin(admin.ModelAdmin):
     Changes are made via Stripe dashboard or outbound API calls (cancel, reactivate).
     """
     list_display   = [
-        "user", "plan_price", "status",
+        "user", "plan", "status",
         "current_period_end", "cancel_at_period_end", "created_at",
     ]
-    list_filter    = ["status", "cancel_at_period_end", "plan_price__billing_interval"]
+    list_filter    = ["status", "cancel_at_period_end", "billing_interval"]
     search_fields  = ["user__username", "user__email", "stripe_subscription_id"]
     readonly_fields = [
-        "user", "plan_price", "stripe_subscription_id",
+        "user", "plan", "amount", "currency", "billing_interval", "stripe_price_id", "stripe_subscription_id",
         "status", "started_at",
         "current_period_start", "current_period_end",
         "cancel_at_period_end", "canceled_at",
